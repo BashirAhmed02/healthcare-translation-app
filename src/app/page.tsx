@@ -1,101 +1,209 @@
-import Image from "next/image";
+'use client'; // Mark this file as a client component
+
+import axios from 'axios';
+import { useEffect, useRef, useState } from 'react';
+import Select from 'react-select'; // Import react-select
 
 export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+  const [isRecording, setIsRecording] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const [translatedText, setTranslatedText] = useState('');
+  const [inputLanguage, setInputLanguage] = useState('en-US'); // Default to English for input
+  const [targetLanguage, setTargetLanguage] = useState('es'); // Default to Spanish for output
+  const [isClient, setIsClient] = useState(false); // Client check for hydration
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+  // Language map with flag URL and language codes
+  const languageMap: { [key: string]: { label: string; recognition: string; synthesis: string; flagUrl: string } } = {
+    'en-US': { label: 'English', recognition: 'en-US', synthesis: 'en-US', flagUrl: 'https://flagcdn.com/w320/gb.png' },
+    'es': { label: 'Spanish', recognition: 'es-ES', synthesis: 'es-ES', flagUrl: 'https://flagcdn.com/w320/es.png' },
+    'fr': { label: 'French', recognition: 'fr-FR', synthesis: 'fr-FR', flagUrl: 'https://flagcdn.com/w320/fr.png' },
+    'de': { label: 'German', recognition: 'de-DE', synthesis: 'de-DE', flagUrl: 'https://flagcdn.com/w320/de.png' },
+    'zh': { label: 'Chinese', recognition: 'zh-CN', synthesis: 'zh-CN', flagUrl: 'https://flagcdn.com/w320/cn.png' },
+    'hi': { label: 'Hindi', recognition: 'hi-IN', synthesis: 'hi-IN', flagUrl: 'https://flagcdn.com/w320/in.png' },
+    'ar': { label: 'Arabic', recognition: 'ar-SA', synthesis: 'ar-SA', flagUrl: 'https://flagcdn.com/w320/sa.png' },
+    'ja': { label: 'Japanese', recognition: 'ja-JP', synthesis: 'ja-JP', flagUrl: 'https://flagcdn.com/w320/jp.png' },
+    'ko': { label: 'Korean', recognition: 'ko-KR', synthesis: 'ko-KR', flagUrl: 'https://flagcdn.com/w320/kr.png' },
+  };
+
+  // Convert languageMap to format suitable for react-select
+  const languageOptions = Object.entries(languageMap).map(([code, { label, flagUrl }]) => ({
+    value: code,
+    label: (
+      <div className="flex items-center">
+        <img src={flagUrl} alt={label} className="mr-2" style={{ width: '20px', height: '15px' }} />
+        {label}
+      </div>
+    ),
+  }));
+
+  useEffect(() => {
+    setIsClient(true); // Mark the component as mounted on the client
+
+    if (typeof window !== 'undefined' && ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
+      recognitionRef.current = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognitionRef.current.lang = inputLanguage; // Set the input language dynamically
+      recognitionRef.current.interimResults = false;
+    }
+  }, [inputLanguage]); // Reinitialize recognition when the input language changes
+
+  const startRecording = () => {
+    const recognition = recognitionRef.current;
+    if (!recognition) {
+      alert('Speech Recognition API is not supported in this browser.');
+      return;
+    }
+
+    recognition.start();
+    setIsRecording(true);
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const result = event.results[0][0].transcript;
+      setTranscript(result);
+    };
+
+    recognition.onerror = (error) => {
+      console.error('Speech Recognition Error:', error);
+      alert('An error occurred during speech recognition. Please try again.');
+      setIsRecording(false);
+    };
+
+    recognition.onend = () => {
+      setIsRecording(false);
+    };
+  };
+
+  const stopRecording = () => {
+    const recognition = recognitionRef.current;
+    if (recognition && isRecording) {
+      recognition.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const translateText = async () => {
+    if (!transcript) {
+      alert('Please record something first!');
+      return;
+    }
+
+    try {
+      const response = await axios.post(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          model: 'gpt-3.5-turbo',
+          messages: [
+            {
+              role: 'user',
+              content: `Translate the following text to ${targetLanguage}: "${transcript}"`,
+            },
+          ],
+          max_tokens: 100,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.NEXT_PUBLIC_OPENAI_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      setTranslatedText(response.data.choices[0].message.content.trim());
+    } catch (error) {
+      console.error('Translation Error:', error);
+      alert('An error occurred during translation.');
+    }
+  };
+
+  const speakText = (text: string, lang: string) => {
+    if (!text) {
+      alert('No text to speak!');
+      return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = lang;
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Avoid rendering anything on the server
+  if (!isClient) {
+    return <div className="text-center mt-20">Loading...</div>; // Show a loading indicator
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-8 sm:p-20">
+      <h1 className="text-3xl font-bold text-blue-500 mb-8">Healthcare Translation App</h1>
+      <div className="flex flex-col items-center gap-4">
+        {/* Input Language Selector */}
+        <div className="flex gap-4 items-center">
+          <label htmlFor="input-language" className="text-gray-700">
+            Input Language:
+          </label>
+          <Select
+            id="input-language"
+            options={languageOptions}
+            value={languageOptions.find((option) => option.value === inputLanguage)}
+            onChange={(selectedOption) => setInputLanguage(selectedOption?.value || '')}
+            className="w-48"
+          />
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+
+        {/* Start/Stop Recording Button */}
+        <button
+          onClick={isRecording ? stopRecording : startRecording}
+          className={`px-6 py-2 rounded text-white ${
+            isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
+          }`}
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
+          {isRecording ? 'Stop Recording' : 'Start Recording'}
+        </button>
+
+        {/* Transcription Output */}
+        <div className="w-full max-w-2xl p-4 bg-white rounded shadow">
+          <h2 className="text-lg font-semibold mb-2">Transcript:</h2>
+          <p className="text-gray-700">{transcript || 'No speech detected yet.'}</p>
+        </div>
+
+        {/* Output Language Selector */}
+        <div className="flex gap-4 items-center">
+          <label htmlFor="output-language" className="text-gray-700">
+            Translate to:
+          </label>
+          <Select
+            id="output-language"
+            options={languageOptions}
+            value={languageOptions.find((option) => option.value === targetLanguage)}
+            onChange={(selectedOption) => setTargetLanguage(selectedOption?.value || '')}
+            className="w-48"
           />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+        </div>
+
+        {/* Translate Button */}
+        <button
+          onClick={translateText}
+          className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded"
         >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+          Translate
+        </button>
+
+        {/* Translated Text Output */}
+        <div className="w-full max-w-2xl p-4 bg-white rounded shadow">
+          <h2 className="text-lg font-semibold mb-2">Translated Text:</h2>
+          <p className="text-gray-700">{translatedText || 'No translation yet.'}</p>
+        </div>
+
+        {/* Speak Translated Text Button */}
+        <button
+          onClick={() => speakText(translatedText, languageMap[targetLanguage].synthesis)}
+          className="px-6 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded"
         >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          Speak Translated Text
+        </button>
+      </div>
     </div>
   );
 }
